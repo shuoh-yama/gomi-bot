@@ -1,0 +1,7 @@
+Flask
+line-bot-sdk
+Flask-SQLAlchemy
+APScheduler
+python-dotenv
+gunicorn
+psycopg2-binary
