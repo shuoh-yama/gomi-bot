@@ -1,18 +1,10 @@
-import time
 from app import create_app
-from app.scheduler import start_scheduler
+from app.scheduler import daily_notification_job
 
-print("Starting background worker...")
+print("Running daily notification task...")
 
-# Create the app object to establish context
+# Create the app object to establish context and run the job
 app = create_app()
+daily_notification_job(app)
 
-# The scheduler runs in a background thread.
-# The main thread needs to be kept alive for the process to continue running.
-start_scheduler(app)
-
-print("Worker started. Scheduler is running in the background.")
-
-# Keep the main thread alive
-while True:
-    time.sleep(3600)
+print("Task finished.")
