@@ -16,7 +16,8 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import (
     MessageEvent,
-    TextMessageContent
+    TextMessageContent,
+    FollowEvent
 )
 
 from .models import db, User, Schedule
@@ -144,5 +145,26 @@ def handle_message(event):
         ReplyMessageRequest(
             reply_token=event.reply_token,
             messages=[TextMessage(text=reply_text)]
+        )
+    )
+
+
+@handler.add(FollowEvent)
+def handle_follow(event):
+    """Handles the event when a user adds the bot as a friend."""
+    pdf_url = "https://raw.githubusercontent.com/shuoh-yama/gomi-bot/main/data/sigengomi2024.pdf"
+    
+    welcome_message = (
+        "友だち追加ありがとうございます！\n\n"
+        "このBOTは、品川区のゴミ収集日をお知らせします。\n\n"
+        "まず、お住まいの地域を登録してください。\n"
+        "例：登録 大井1丁目\n\n"
+        f"ゴミ出しの全体スケジュールはこちらのPDFから確認できます：\n{pdf_url}"
+    )
+
+    line_bot_api.reply_message(
+        ReplyMessageRequest(
+            reply_token=event.reply_token,
+            messages=[TextMessage(text=welcome_message)]
         )
     )
