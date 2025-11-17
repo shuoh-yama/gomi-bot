@@ -32,15 +32,16 @@ def create_app():
     db.init_app(app)
 
     with app.app_context():
+        # Register blueprints and commands
         from . import bot
         app.register_blueprint(bot.bp)
-
-        # Register CLI commands
         from . import data
         data.register_cli_command(app)
 
-        # Create database tables if they don't exist
+        # Create database tables and load data if they don't exist
+        from .data import load_schedule_data
         db.create_all()
+        load_schedule_data()
 
     # Start the scheduler
     from . import scheduler
