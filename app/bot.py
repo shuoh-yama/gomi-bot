@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 from flask import Blueprint, request, abort, current_app
 from linebot.v3 import (
     WebhookHandler
@@ -24,6 +25,7 @@ from linebot.v3.webhooks import (
 )
 
 from .models import db, User, Schedule
+from .scheduler import daily_notification_job
 
 bp = Blueprint('bot', __name__)
 
@@ -32,6 +34,23 @@ configuration = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 api_client = ApiClient(configuration)
 line_bot_api = MessagingApi(api_client)
+
+# --- New endpoint to be triggered by external cron job ---
+@bp.route('/trigger/<secret_key>', methods=['POST'])
+def trigger_scheduler(secret_key):
+    cron_secret = os.getenv('CRON_SECRET_KEY')
+    if not cron_secret or secret_key != cron_secret:
+        print(f"Invalid secret key received.")
+        abort(403)
+    
+    app = current_app._get_current_object()
+    
+    # Run the job in a background thread so the HTTP request can return immediately
+    thread = threading.Thread(target=daily_notification_job, args=(app,))
+    thread.start()
+    
+    print("Scheduler job triggered by cron.")
+    return "Scheduler triggered."
 
 # --- Helper Functions for Area Parsing ---
 
