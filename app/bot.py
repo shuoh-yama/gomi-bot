@@ -1,4 +1,5 @@
 import os
+import re
 from flask import Blueprint, request, abort, current_app
 from linebot.v3 import (
     WebhookHandler
@@ -28,6 +29,53 @@ handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 api_client = ApiClient(configuration)
 line_bot_api = MessagingApi(api_client)
 
+# --- Helper Functions for Area Parsing ---
+
+def parse_user_area(text):
+    """Parses user input like '東大井2丁目' into a base name and number."""
+    # Normalize numbers (e.g., ２ -> 2)
+    text = text.translate(str.maketrans('０１２３４５６７８９', '0123456789'))
+    # Try to find '〇丁目' pattern
+    match = re.match(r'(.+?)(\d+)丁目.*', text)
+    if match:
+        return match.group(1), int(match.group(2))
+    # Fallback for names without numbers
+    return text, None
+
+def is_number_in_range(num, schedule_name):
+    """Checks if a number is within the range specified by a schedule name."""
+    if num is None:
+        return False
+    
+    # Normalize schedule name for parsing
+    schedule_name = schedule_name.translate(str.maketrans('０１２３４５６７８９', '0123456789'))
+    
+    # Case 1: "1-4丁目"
+    match = re.search(r'(\d+)-(\d+)丁目', schedule_name)
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        return start <= num <= end
+
+    # Case 2: "5・6丁目"
+    match = re.findall(r'(\d+)・', schedule_name)
+    if match:
+        nums = [int(n) for n in match]
+        # Also get the last number, e.g., the "6" in "5・6丁目"
+        last_num_match = re.search(r'・(\d+)丁目', schedule_name)
+        if last_num_match:
+            nums.append(int(last_num_match.group(1)))
+        return num in nums
+
+    # Case 3: "7丁目" (single number)
+    match = re.search(r'(\d+)丁目', schedule_name)
+    if match:
+        # Ensure it's not a range or list, e.g. "1-4丁目" should not match "1丁目"
+        if '-' not in schedule_name and '・' not in schedule_name:
+            return num == int(match.group(1))
+
+    return False
+
+# --- LINE Bot Webhook Handlers ---
 
 @bp.route("/callback", methods=['POST'])
 def callback():
@@ -51,15 +99,29 @@ def handle_message(event):
     reply_text = ""
 
     try:
-        # Handle registration command
         if text.startswith('登録'):
-            area_name = text.split(maxsplit=1)[1].strip()
+            user_input_area = text.split(maxsplit=1)[1].strip()
             
-            # Check if the area exists in the database
-            schedule = db.session.query(Schedule).filter_by(name=area_name).first()
+            # First, try for an exact match
+            schedule = db.session.query(Schedule).filter_by(name=user_input_area).first()
 
+            if not schedule:
+                # If no exact match, try fuzzy matching
+                base_name, num = parse_user_area(user_input_area)
+                
+                # Find potential schedules
+                potential_schedules = db.session.query(Schedule).filter(Schedule.name.like(f"%{base_name}%")).all()
+                
+                found_schedules = []
+                for s in potential_schedules:
+                    if num is not None and is_number_in_range(num, s.name):
+                        found_schedules.append(s)
+                
+                if len(found_schedules) == 1:
+                    schedule = found_schedules[0]
+
+            # Process the found schedule
             if schedule:
-                # Get user or create a new one
                 user = db.session.query(User).filter_by(line_user_id=user_id).first()
                 if not user:
                     user = User(line_user_id=user_id)
@@ -67,11 +129,10 @@ def handle_message(event):
                 user.area_name = schedule.name
                 db.session.add(user)
                 db.session.commit()
-                reply_text = f"「{area_name}」を登録しました。\nゴミ収集日の前日20時にお知らせします。"
+                reply_text = f"「{schedule.name}」を登録しました。\nゴミ収集日の前日20時にお知らせします。"
             else:
-                reply_text = f"「{area_name}」が見つかりませんでした。\nPDFに記載されている正式な地域名で登録してください。\n例：登録 大井1丁目"
+                reply_text = f"「{user_input_area}」に一致する地域が見つかりませんでした。\nPDFの正式名称をご確認の上、再度お試しください。"
 
-        # Handle 'help' or other commands
         else:
             reply_text = "お住まいの地域を登録するには、「登録 〇〇」と送信してください。\n例：登録 大井1丁目"
 
@@ -79,7 +140,6 @@ def handle_message(event):
         current_app.logger.error(f"Error handling message: {e}")
         reply_text = "エラーが発生しました。もう一度お試しください。"
 
-    # Send reply message
     line_bot_api.reply_message(
         ReplyMessageRequest(
             reply_token=event.reply_token,
