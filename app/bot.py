@@ -31,10 +31,6 @@ line_bot_api = MessagingApi(api_client)
 
 @bp.route("/callback", methods=['POST'])
 def callback():
-    # Log the first 5 chars of the secret to verify it's loaded correctly
-    secret = os.getenv('LINE_CHANNEL_SECRET', 'Not Set')
-    current_app.logger.warning(f"Using Channel Secret (first 5 chars): {secret[:5]}")
-
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     current_app.logger.info("Request body: " + body)
