@@ -43,8 +43,4 @@ def create_app():
         db.create_all()
         load_schedule_data()
 
-    # Start the scheduler
-    from . import scheduler
-    scheduler.start_scheduler(app)
-
     return app
