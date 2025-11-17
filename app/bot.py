@@ -107,7 +107,7 @@ def handle_message(event):
             else:
                 reply_text = f"「{user_input_area}」に一致する地域が見つかりませんでした。"
 
-        elif text in ["メニュー", "確認", "ごみの日"]:
+        elif text in ["メニュー", "確認", "ごみの日", "収集日を確認"]:
             reply_text = "どのごみの日を確認しますか？"
             quick_reply = QuickReply(items=[
                 QuickReplyItem(action=MessageAction(label="燃やすごみ", text="燃やすごみ")),
@@ -125,9 +125,25 @@ def handle_message(event):
                     reply_text = f"【陶器・ガラス・金属ごみ】\n収集日は「{user.schedule.ceramic_glass_metal}」です。"
             else:
                 reply_text = "地域が登録されていません。\n「登録 〇〇」と送信して、お住まいの地域を登録してください。"
+
+        elif text == "ゴミのルール":
+            reply_text = (
+                "【主なゴミのルール】\n\n"
+                "■燃やすごみ\n生ごみ、汚れの落ちないプラスチック、ゴム・革製品など\n\n"
+                "■資源\nプラスチック類、ペットボトル、びん、缶、古紙、乾電池など\n※汚れを落として出してください\n\n"
+                "■陶器・ガラス・金属ごみ\n金属類、ガラス類、傘、スプレー缶、電球など\n※スプレー缶は使い切ってから出してください\n\n"
+                "詳細は「PDFで確認」ボタンからご確認ください。"
+            )
+
+        elif text == "地域を登録":
+            reply_text = "地域を登録・変更するには、「登録 〇〇」と送信してください。\n例：登録 大井1丁目"
+
+        elif text == "PDF":
+            pdf_url = "https://raw.githubusercontent.com/shuoh-yama/gomi-bot/main/data/sigengomi2024.pdf"
+            reply_text = f"ゴミ出しの全体スケジュールはこちらのPDFから確認できます：\n{pdf_url}"
         
         else:
-            reply_text = "「メニュー」と入力すると、ゴミの日を確認できます。\n\n地域を登録・変更する場合は、「登録 〇〇」と送信してください。"
+            reply_text = "メニューから操作を選択するか、「登録 〇〇」と送信して地域を登録してください。"
 
     except Exception as e:
         current_app.logger.error(f"Error handling message: {e}")
