@@ -3,7 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from .models import db, User, Schedule
-from .bot import line_bot_api
+from app import line_bot_api
 from linebot.v3.messaging import (
     PushMessageRequest,
     TextMessage

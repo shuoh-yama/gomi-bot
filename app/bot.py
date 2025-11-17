@@ -2,16 +2,10 @@ import os
 import re
 import threading
 from flask import Blueprint, request, abort, current_app
-from linebot.v3 import (
-    WebhookHandler
-)
-from linebot.v3.exceptions import (
-    InvalidSignatureError
-)
+
+# linebot imports are now mostly handled in app/__init__.py
+from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
-    Configuration,
-    ApiClient,
-    MessagingApi,
     ReplyMessageRequest,
     TextMessage,
     QuickReply,
@@ -26,14 +20,11 @@ from linebot.v3.webhooks import (
 
 from .models import db, User, Schedule
 from .scheduler import daily_notification_job
+# Import the centrally created api clients from the app package
+from app import line_bot_api, handler
 
 bp = Blueprint('bot', __name__)
 
-# Load environment variables and create API clients
-configuration = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
-api_client = ApiClient(configuration)
-line_bot_api = MessagingApi(api_client)
 
 # --- New endpoint to be triggered by external cron job ---
 @bp.route('/trigger/<secret_key>', methods=['POST'])

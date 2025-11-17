@@ -2,6 +2,18 @@ import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
+from linebot.v3.messaging import (
+    Configuration,
+    ApiClient,
+    MessagingApi
+)
+from linebot.v3.webhook import WebhookHandler
+
+# Create LINE API client and handler here to avoid circular import
+configuration = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
+api_client = ApiClient(configuration)
+line_bot_api = MessagingApi(api_client)
+handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
 db = SQLAlchemy()
 
