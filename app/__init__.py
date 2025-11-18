@@ -35,6 +35,8 @@ def create_app():
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
+    print(f"--- DATABASE_URL IN USE: {database_url} ---")
+
     app.config.from_mapping(
         SECRET_KEY=os.getenv('SECRET_KEY', 'dev'),
         SQLALCHEMY_DATABASE_URI=database_url,
