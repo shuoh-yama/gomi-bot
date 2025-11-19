@@ -52,9 +52,19 @@ def create_app():
         from . import data
         data.register_cli_command(app)
 
-        # Create database tables and load data if they don't exist
-        from .data import load_schedule_data
-        db.create_all()
-        load_schedule_data()
+        # --- Database Initialization ---
+        # This logic runs only if the 'users' table doesn't exist,
+        # preventing data wipes on server restarts (e.g., Render sleep).
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if not inspector.has_table("users"):
+            print("--- 'users' table not found. Initializing database... ---")
+            db.create_all()
+            
+            from .data import load_schedule_data
+            load_schedule_data()
+            print("--- Database initialized. ---")
+        else:
+            print("--- Database already initialized. Skipping. ---")
 
     return app

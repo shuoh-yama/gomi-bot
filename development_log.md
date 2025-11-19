@@ -6,14 +6,13 @@
 
 ## 2. 最終的な技術構成
 
-- **言語/フレームワーク**: Python / Flask, APScheduler
-- **データベース**: PostgreSQL (Render提供)
+- **言語/フレームワーク**: Python / Flask
 - **デプロイ先**: Render (Web Service)
+- **データベース**: PostgreSQL (Render提供)
 - **主要なPythonライブラリ**:
   - `Flask`: Webフレームワーク
   - `line-bot-sdk`: LINE Messaging APIとの連携
   - `Flask-SQLAlchemy`: データベース操作
-  - `APScheduler`: 通知のスケジューリング
   - `gunicorn`: 本番環境用Webサーバー
   - `psycopg2-binary`: PostgreSQL接続用
 - **LINE APIの利用機能**:
@@ -21,6 +20,8 @@
   - Webhook (FollowEvent, MessageEvent)
   - リッチメニュー
   - クイックリプライ
+- **外部サービス**:
+  - `cron-job.org`: 定時実行（スリープ解除と通知トリガー）のため
 
 ## 3. 実装した機能一覧
 
@@ -28,7 +29,7 @@
   - `登録 〇〇` 形式で地域を登録。
   - `東大井2丁目` のような入力にも対応する、あいまい検索機能を実装。
 - **自動通知**:
-  - 毎日20時に、翌日のゴミ収集情報を登録ユーザーへ個別にプッシュ通知。
+  - 毎日20時に、外部Cronサービスからのトリガーにより、翌日のゴミ収集情報を登録ユーザーへ個別にプッシュ通知。
 - **情報確認機能**:
   - 常設のリッチメニューを実装。
   - `収集日を確認`: クイックリプライ形式でゴミの種類を選択し、次回の収集日を確認。
@@ -40,16 +41,16 @@
 ## 4. 主要なファイル構成
 
 - `run.py`: アプリケーション起動スクリプト。
-- `app/__init__.py`: Flaskアプリケーションの初期化、DB設定、スケジューラ起動。
-- `app/bot.py`: LINE Webhookのメインロジック。メッセージ応答、イベント処理。
+- `app/__init__.py`: Flaskアプリケーションの初期化、DB設定。
+- `app/bot.py`: LINE Webhookのメインロジック。メッセージ応答、イベント処理、Cronトリガー用エンドポイント。
 - `app/models.py`: `User`と`Schedule`のデータベースモデルを定義。
-- `app/scheduler.py`: `APScheduler`を使い、毎日の通知ジョブを定義・実行。
+- `app/scheduler.py`: 通知ジョブ本体のロジック (`daily_notification_job`) を定義。
 - `app/data.py`: `schedule.json`からDBへデータをロードするロジック。
 - `data/schedule.json`: PDFから手動で書き起こしたゴミ収集スケジュールデータ。
 - `create_rich_menu.py`: リッチメニューをLINE APIに登録するための使い捨てスクリプト。
 - `richmenu.png`: リッチメニューの背景画像。
 - `requirements.txt`: 依存ライブラリ一覧。
-- `.env`: APIキーなどの秘密情報を格納。
+- `.env`: ローカル開発用のAPIキーなどを格納。
 
 ## 5. 開発・デバッグの経緯と解決策
 
@@ -92,8 +93,8 @@
 - **原因**: macOSのPython環境で、SSLルート証明書へのパスが通っていない。`Install Certificates.command` も存在しなかった。
 - **解決策**: `create_rich_menu.py` の冒頭で、`certifi` パッケージが提供する証明書のパスを `SSL_CERT_FILE` 環境変数にプログラム的に設定することで解決。
 
-- **問題**: `create_rich_menu.py` 実行時に、`AttributeError: ... object has no attribute ...` が頻発。
-- **原因**: 私（Gemini）の `line-bot-sdk-python` v3 の知識が不正確で、画像アップロード用の関数名を何度も間違えた。
+- **問題**: `create_rich_menu.py` 実行時に、LINE SDKの画像アップロード関数で `AttributeError` が頻発。
+- **原因**: 私（Gemini）の `line-bot-sdk-python` v3 の知識が不正確で、正しい関数名を特定できなかった。
 - **解決策**: Python SDK経由でのアップロードを諦め、LINE APIの仕様に基づいた`curl`コマンドをPythonスクリプトに出力させ、それをユーザーに手動で実行してもらう方式に変更。
 
 - **問題**: `curl`コマンド実行後も「画像をアップロードしてください」というエラーが発生。
@@ -101,5 +102,32 @@
 - **解決策**: スクリプトを修正し、「画像アップロード用の`curl`コマンド」と「デフォルト設定用の`curl`コマンド」を正しい順番で2つ出力するように変更。ユーザーに順次実行してもらうことで解決。
 
 - **問題**: 画像アップロードの`curl`コマンドで `The image size is not allowed` エラーが発生。
-- **原因**: ユーザーが作成した `richmenu.png` のピクセルサイズが、LINEの規定（2500x1686）と完全には一致していなかった。
+- **原因**: ユーザーが作成した `richmenu.png` のピクセルサイズが、LINEの規定（2500x1868）と完全には一致していなかった。
 - **解決策**: ユーザーに画像サイズを正確に修正してもらい、再度スクリプトと`curl`コマンドを実行することで解決。
+
+## 6. 本番環境の安定稼働に向けたアーキテクチャ変更
+
+初期デプロイ後、Renderの無料Web Serviceがスリープすることにより、毎日20時の定時通知が実行されないという重大な問題がユーザーによって指摘された。これを解決するため、アーキテクチャの変更を複数回試みた。
+
+### 6.1. 検討案1: Render Background Worker（失敗）
+
+- **提案**: スリープしないRenderの「Background Worker」に通知機能を分離する案。
+- **結果**: Background Workerが有料プランの機能であることが判明し、断念。私のプラットフォーム知識の誤りが原因。
+
+### 6.2. 検討案2: PythonAnywhereへの移行（失敗）
+
+- **提案**: 1日1回の無料スケジュールタスク機能を持つ「PythonAnywhere」へ、プロジェクト全体を移行する案。
+- **結果**: 移行作業を進めたが、以下の2つの致命的な問題により断念。
+    1.  Python実行環境が壊れており、`pip`コマンドが実行できない問題が発生。
+    2.  無料プランで提供されるWebアプリのURLが`http`のみであり、LINE Webhookが要求する`https`を満たせなかった。
+
+### 6.3. 最終解決策: Render + 外部Cronサービス
+
+- **提案**: 最終的に、以下の構成に落ち着いた。
+    1.  **BOT本体 (Render Web Service)**: 無料でHTTPSが利用できるRenderにBOT本体を置き、ユーザーとの対話を担当させる。スリープは許容する。
+    2.  **目覚まし時計 (外部Cronサービス)**: `cron-job.org`のような無料の外部サービスを使い、毎日20時（日本時間）にRender上のBOTの特定URLを叩く。
+- **実装**:
+    - `app/bot.py`に、合言葉付きのトリガーURL (`/trigger/<secret_key>`) を追加。このURLが叩かれると、通知処理が開始される。
+    - Renderに合言葉用の環境変数 `CRON_SECRET_KEY` を追加。
+    - `cron-job.org`で、指定時刻に上記URLへPOSTリクエストを送るジョブを作成。
+- **結論**: この構成により、**無料**で、**HTTPS**を使い、かつ**スリープしない定時実行**という、すべての要件を満たす安定したBOTが完成した。
